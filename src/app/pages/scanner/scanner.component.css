@@ -1,0 +1,6 @@
+.shell { padding: 16px; }
+.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.controls { margin-bottom:12px; display:flex; gap:12px; align-items:center; }
+.preview { width:100%; max-width:640px; aspect-ratio: 16/9; border:1px solid #ddd; border-radius:12px; overflow:hidden; }
+.actions { margin-top:12px; }
+.result { margin-top:16px; }

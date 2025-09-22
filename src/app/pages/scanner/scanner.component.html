@@ -1,0 +1,39 @@
+<div class="shell">
+  <header class="header">
+    <h2>Lector de Códigos</h2>
+    <button (click)="auth.logout()">Salir</button>
+  </header>
+
+  <section class="controls">
+    <label>
+      Cámara:
+      <select [(ngModel)]="selectedDevice">
+        <option *ngFor="let d of devices" [ngValue]="d">
+          {{ d.label || d.deviceId }}
+        </option>
+      </select>
+    </label>
+  </section>
+
+  <!-- ✅ device nunca será null; si no hay cámara queda undefined -->
+  <zxing-scanner
+    [device]="selectedDevice"
+    [formats]="formats"
+    (scanSuccess)="onScanSuccess($event)"
+    (scanError)="onScanError($event)"
+    (camerasFound)="onCamerasFound($event)"
+    (hasDevices)="onHasDevices($event)"
+    [torch]="torchOn"
+    [tryHarder]="true"
+    class="preview"
+  ></zxing-scanner>
+
+  <section class="actions">
+    <button (click)="toggleTorch()">Linterna {{ torchOn ? 'ON' : 'OFF' }}</button>
+  </section>
+
+  <section class="result" *ngIf="lastResult">
+    <h3>Último código leído</h3>
+    <code>{{ lastResult }}</code>
+  </section>
+</div>
