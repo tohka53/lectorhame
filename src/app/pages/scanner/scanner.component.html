@@ -1,46 +1,15 @@
-<!-- Contenedor a pantalla completa -->
-<div class="scanner-container">
-  <!-- Controles flotantes -->
-  <div class="topbar">
-    <div class="left">
-      <label>
-        Cámara:
-        <select [(ngModel)]="selectedDevice">
-          <option *ngFor="let d of devices" [ngValue]="d">
-            {{ d.label || d.deviceId }}
-          </option>
-        </select>
-      </label>
-    </div>
-    <div class="right">
-      <button (click)="toggleTorch()">Linterna {{ torchOn ? 'ON' : 'OFF' }}</button>
-      <button (click)="logout()">Salir</button>
-    </div>
+<!-- ... tu scanner a pantalla completa ... -->
+
+<section class="result">
+  <h3>Lectura</h3>
+  <div *ngIf="lastResult; else noResult">
+    <p><b>Válido:</b> <code>{{ lastResult }}</code></p>
   </div>
+  <ng-template #noResult>
+    <p class="muted">Aún no hay lectura válida (J5-STR-...)</p>
+  </ng-template>
 
-  <!-- Video/scanner ocupando toda la pantalla -->
-  <zxing-scanner
-    class="preview"
-    [device]="selectedDevice || undefined"
-    [formats]="formats"
-    [tryHarder]="true"
-    [autofocusEnabled]="true"
-    [torch]="torchOn"
-    [videoConstraints]="videoConstraints"
-    [timeBetweenScans]="300"
-    (scanSuccess)="onScanSuccess($event)"
-    (scanError)="onScanError($event)"
-    (camerasFound)="onCamerasFound($event)"
-    (hasDevices)="onHasDevices($event)"
-  ></zxing-scanner>
-
-  <!-- Overlay grande para guiar (área de reconocimiento) -->
-  <div class="overlay">
-    <div class="guide"></div>
-  </div>
-</div>
-
-<!-- Resultado (flotante abajo) -->
-<div class="resultbar" *ngIf="lastResult as txt">
-  <span><b>Bruto:</b> {{ txt }}</span>
-</div>
+  <p *ngIf="lastIgnored" class="warn">
+    Descartado: <code>{{ lastIgnored }}</code> (posible EAN/otro código en la hoja)
+  </p>
+</section>
