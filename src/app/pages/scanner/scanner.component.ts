@@ -1,81 +1,98 @@
-import { Component } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { AuthService } from '../../core/auth.service';
-import { BarcodeFormat } from '@zxing/library';
-
-type ParsedCode = {
-  raw: string;
-  serie: string;
-  empresa: string;
-  noDoc: string;
-  lote?: string;
-  planta?: string;
-  envio?: string;
-};
+import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 
 @Component({
   selector: 'app-scanner',
-  standalone: false,  
+  standalone: false,
   templateUrl: './scanner.component.html',
   styleUrls: ['./scanner.component.css']
 })
-export class ScannerComponent {
-  formats = [BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.CODE_128];
-
-  devices: MediaDeviceInfo[] = [];
-  selectedDevice?: MediaDeviceInfo;
+export class ScannerComponent implements OnInit, OnDestroy {
+  @ViewChild('video', { static: true }) video!: ElementRef<HTMLVideoElement>;
 
   lastResult: string | null = null;
-  lastParsed: ParsedCode | null = null;
-
   torchOn = false;
 
-  videoConstraints: MediaTrackConstraints = {
-    facingMode: { ideal: 'environment' },
-    width: { ideal: 1920 },
-    height: { ideal: 1080 }
-  };
+  // Habilita los formatos 1D más comunes (el tuyo suele ser Code 128)
+  private formats = [
+    BarcodeFormat.CODE_128,
+    BarcodeFormat.CODE_39,
+    BarcodeFormat.CODE_93,
+    BarcodeFormat.ITF,
+    BarcodeFormat.CODABAR,
+    BarcodeFormat.EAN_13,
+    BarcodeFormat.EAN_8,
+    BarcodeFormat.UPC_A,
+    BarcodeFormat.UPC_E,
+  ];
 
-  private readonly re = /^J5-STR-(\d{6})-(\d{5})-(\d{5})-(\d{6})$/;
+  private controls?: IScannerControls;
+  private reader: BrowserMultiFormatReader;
 
-  constructor(public auth: AuthService) {}
+  constructor(public auth: AuthService) {
+    // Hints: TRY_HARDER + posibles formatos
+    const hints = new Map<DecodeHintType, any>();
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, this.formats);
 
-  onCamerasFound(devs: MediaDeviceInfo[]) {
-    this.devices = devs || [];
-    if (this.devices.length) {
-      const back = this.devices.find(d => /back|rear|trás|trasera|environment/i.test(d.label));
-      this.selectedDevice = back ?? this.devices[0];
+    // Pasa hints en el constructor; 300ms entre lecturas continuas
+   this.reader = new BrowserMultiFormatReader(
+  hints,
+  { delayBetweenScanSuccess: 300, delayBetweenScanAttempts: 100 } // opcional
+);
+  }
+
+  async ngOnInit() {
+    const constraints: MediaStreamConstraints = {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width:  { ideal: 2560 },  // si tu equipo es modesto, prueba 1920x1080
+        height: { ideal: 1440 },
+        frameRate: { ideal: 30 }
+        // (quitamos focusMode para evitar error de tipos)
+      }
+    };
+
+    this.controls = await this.reader.decodeFromVideoDevice(
+      undefined,
+      this.video.nativeElement,
+      (result, err, _controls) => {
+        if (result) {
+          const raw = result.getText()?.replace(/^\*+|\*+$/g, '').trim();
+          if (raw) this.lastResult = raw;
+        }
+        // Los errores de decodificación son normales mientras intenta; no logeamos para no saturar.
+      }
+    );
+  }
+
+  ngOnDestroy(): void {
+    try { this.controls?.stop(); } catch {}
+    // No llamamos reader.reset(); algunas versiones no lo incluyen.
+  }
+
+  async toggleTorch() {
+    // Torch si el navegador/track lo soporta (Android Chrome normalmente sí)
+    const stream = this.video.nativeElement?.srcObject as MediaStream | null;
+    const track = stream?.getVideoTracks()?.[0];
+
+    if (!track) { console.warn('Sin track de video'); return; }
+
+    // Chequeo de capacidades
+    const caps = (track as any).getCapabilities ? (track as any).getCapabilities() : null;
+    if (caps && 'torch' in caps) {
+      const next = !this.torchOn;
+      try {
+        // Cast a any para evitar errores de tipo TS (propiedad no tipada en MediaTrackConstraintSet)
+        await (track as any).applyConstraints({ advanced: [{ torch: next }] } as any);
+        this.torchOn = next;
+      } catch (e) {
+        console.warn('No se pudo activar linterna via constraints:', e);
+      }
     } else {
-      this.selectedDevice = undefined;
+      console.warn('Torch no soportado por este dispositivo/navegador.');
     }
-  }
-
-  onHasDevices(has: boolean) {
-    if (!has) console.warn('No se detectaron cámaras.');
-  }
-
-  onScanSuccess(text: string) {
-    const cleaned = text.replace(/^\*+|\*+$/g, '').trim();
-    this.lastResult = cleaned;
-
-    const m = cleaned.match(this.re);
-    if (m) {
-      const [, noDoc, lote, planta, envio] = m;
-      this.lastParsed = {
-        raw: cleaned,
-        serie: 'J5',
-        empresa: 'STR',
-        noDoc, lote, planta, envio
-      };
-    } else {
-      this.lastParsed = null;
-    }
-  }
-
-  onScanError(err: any) {
-    console.warn(err);
-  }
-
-  toggleTorch() {
-    this.torchOn = !this.torchOn;
   }
 }

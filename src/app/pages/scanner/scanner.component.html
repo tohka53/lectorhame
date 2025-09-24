@@ -4,68 +4,24 @@
     <button (click)="auth.logout()">Salir</button>
   </header>
 
-  <section class="controls">
-    <label>
-      Cámara:
-      <select [(ngModel)]="selectedDevice">
-        <option *ngFor="let d of devices" [ngValue]="d">
-          {{ d.label || d.deviceId }}
-        </option>
-      </select>
-    </label>
+  <div class="scanner-wrap">
+    <div class="overlay">
+      <div class="guide"><span>Alinea el código en esta franja</span></div>
+    </div>
+    <video #video autoplay playsinline muted class="preview"></video>
+  </div>
+
+  <section class="actions">
     <button (click)="toggleTorch()">Linterna {{ torchOn ? 'ON' : 'OFF' }}</button>
   </section>
 
-  <div class="scanner-wrap">
-    <div class="overlay">
-      <div class="guide">
-        <span>Apunta a la franja superior/central</span>
-      </div>
+  <section class="result">
+    <h3>Lectura</h3>
+    <div *ngIf="lastResult; else noResult">
+      <p><b>Bruto:</b> <code>{{ lastResult }}</code></p>
     </div>
-
-    <zxing-scanner
-  [device]="selectedDevice || undefined"
-  [formats]="formats"
-  [tryHarder]="true"
-  [autofocusEnabled]="true"
-  [torch]="torchOn"
-  [videoConstraints]="videoConstraints"
-  [timeBetweenScans]="300"
-  (scanSuccess)="onScanSuccess($event)"
-  (scanError)="onScanError($event)"
-  (camerasFound)="onCamerasFound($event)"
-  (hasDevices)="onHasDevices($event)"
-  class="preview"
-></zxing-scanner>
-
-  </div>
-
- <section class="result">
-  <h3>Lectura</h3>
-  <div *ngIf="lastResult; else noResult">
-    <p><b>Bruto:</b> <code>{{ lastResult }}</code></p>
-
-    <div *ngIf="lastParsed; else invalid">
-      <h4>Identificado</h4>
-      <ul>
-        <li><b>Serie:</b> {{ lastParsed.serie }}</li>
-        <li><b>Empresa:</b> {{ lastParsed.empresa }}</li>
-        <li><b>No.Doc:</b> {{ lastParsed.noDoc }}</li>
-        <li><b>Lote (posible):</b> {{ lastParsed.lote }}</li>
-        <li><b>Planta:</b> {{ lastParsed.planta }}</li>
-        <li><b>Envío (posible):</b> {{ lastParsed.envio }}</li>
-      </ul>
-    </div>
-    <ng-template #invalid>
-      <p class="warn">
-        El código leído no coincide con el patrón esperado
-        <code>J5-STR-######-#####-#####-######</code>.
-      </p>
+    <ng-template #noResult>
+      <p class="muted">Aún no hay lectura.</p>
     </ng-template>
-  </div>
-  <ng-template #noResult>
-    <p class="muted">Aún no hay lectura.</p>
-  </ng-template>
-</section>
-
+  </section>
 </div>
