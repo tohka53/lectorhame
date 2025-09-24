@@ -1,27 +1,46 @@
-<div class="shell">
-  <header class="header">
-    <h2>Lector de Códigos</h2>
-    <button (click)="auth.logout()">Salir</button>
-  </header>
-
-  <div class="scanner-wrap">
-    <div class="overlay">
-      <div class="guide"><span>Alinea el código en esta franja</span></div>
+<!-- Contenedor a pantalla completa -->
+<div class="scanner-container">
+  <!-- Controles flotantes -->
+  <div class="topbar">
+    <div class="left">
+      <label>
+        Cámara:
+        <select [(ngModel)]="selectedDevice">
+          <option *ngFor="let d of devices" [ngValue]="d">
+            {{ d.label || d.deviceId }}
+          </option>
+        </select>
+      </label>
     </div>
-    <video #video autoplay playsinline muted class="preview"></video>
+    <div class="right">
+      <button (click)="toggleTorch()">Linterna {{ torchOn ? 'ON' : 'OFF' }}</button>
+      <button (click)="logout()">Salir</button>
+    </div>
   </div>
 
-  <section class="actions">
-    <button (click)="toggleTorch()">Linterna {{ torchOn ? 'ON' : 'OFF' }}</button>
-  </section>
+  <!-- Video/scanner ocupando toda la pantalla -->
+  <zxing-scanner
+    class="preview"
+    [device]="selectedDevice || undefined"
+    [formats]="formats"
+    [tryHarder]="true"
+    [autofocusEnabled]="true"
+    [torch]="torchOn"
+    [videoConstraints]="videoConstraints"
+    [timeBetweenScans]="300"
+    (scanSuccess)="onScanSuccess($event)"
+    (scanError)="onScanError($event)"
+    (camerasFound)="onCamerasFound($event)"
+    (hasDevices)="onHasDevices($event)"
+  ></zxing-scanner>
 
-  <section class="result">
-    <h3>Lectura</h3>
-    <div *ngIf="lastResult; else noResult">
-      <p><b>Bruto:</b> <code>{{ lastResult }}</code></p>
-    </div>
-    <ng-template #noResult>
-      <p class="muted">Aún no hay lectura.</p>
-    </ng-template>
-  </section>
+  <!-- Overlay grande para guiar (área de reconocimiento) -->
+  <div class="overlay">
+    <div class="guide"></div>
+  </div>
+</div>
+
+<!-- Resultado (flotante abajo) -->
+<div class="resultbar" *ngIf="lastResult as txt">
+  <span><b>Bruto:</b> {{ txt }}</span>
 </div>

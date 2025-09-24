@@ -1,7 +1,6 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Component } from '@angular/core';
 import { AuthService } from '../../core/auth.service';
-import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
-import { BarcodeFormat, DecodeHintType } from '@zxing/library';
+import { BarcodeFormat } from '@zxing/library';
 
 @Component({
   selector: 'app-scanner',
@@ -9,14 +8,9 @@ import { BarcodeFormat, DecodeHintType } from '@zxing/library';
   templateUrl: './scanner.component.html',
   styleUrls: ['./scanner.component.css']
 })
-export class ScannerComponent implements OnInit, OnDestroy {
-  @ViewChild('video', { static: true }) video!: ElementRef<HTMLVideoElement>;
-
-  lastResult: string | null = null;
-  torchOn = false;
-
-  // Habilita los formatos 1D más comunes (el tuyo suele ser Code 128)
-  private formats = [
+export class ScannerComponent {
+  // Habilita formatos 1D comunes (tu etiqueta suele ser Code 128)
+  formats = [
     BarcodeFormat.CODE_128,
     BarcodeFormat.CODE_39,
     BarcodeFormat.CODE_93,
@@ -28,71 +22,59 @@ export class ScannerComponent implements OnInit, OnDestroy {
     BarcodeFormat.UPC_E,
   ];
 
-  private controls?: IScannerControls;
-  private reader: BrowserMultiFormatReader;
+  devices: MediaDeviceInfo[] = [];
+  selectedDevice?: MediaDeviceInfo;
 
-  constructor(public auth: AuthService) {
-    // Hints: TRY_HARDER + posibles formatos
-    const hints = new Map<DecodeHintType, any>();
-    hints.set(DecodeHintType.TRY_HARDER, true);
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, this.formats);
+  // Texto leído (muestra siempre el bruto; luego puedes parsear)
+  lastResult: string | null = null;
 
-    // Pasa hints en el constructor; 300ms entre lecturas continuas
-   this.reader = new BrowserMultiFormatReader(
-  hints,
-  { delayBetweenScanSuccess: 300, delayBetweenScanAttempts: 100 } // opcional
-);
-  }
+  // Linterna (si el navegador/dispositivo la soporta)
+  torchOn = false;
 
-  async ngOnInit() {
-    const constraints: MediaStreamConstraints = {
-      video: {
-        facingMode: { ideal: 'environment' },
-        width:  { ideal: 2560 },  // si tu equipo es modesto, prueba 1920x1080
-        height: { ideal: 1440 },
-        frameRate: { ideal: 30 }
-        // (quitamos focusMode para evitar error de tipos)
-      }
-    };
+  // Alta resolución y cámara trasera
+  videoConstraints: MediaTrackConstraints = {
+    facingMode: { ideal: 'environment' },
+    width:  { ideal: 1920 },   // prueba 2560x1440 si tu móvil es potente
+    height: { ideal: 1080 },
+    frameRate: { ideal: 30 }
+  };
 
-    this.controls = await this.reader.decodeFromVideoDevice(
-      undefined,
-      this.video.nativeElement,
-      (result, err, _controls) => {
-        if (result) {
-          const raw = result.getText()?.replace(/^\*+|\*+$/g, '').trim();
-          if (raw) this.lastResult = raw;
-        }
-        // Los errores de decodificación son normales mientras intenta; no logeamos para no saturar.
-      }
-    );
-  }
+  constructor(public auth: AuthService) {}
 
-  ngOnDestroy(): void {
-    try { this.controls?.stop(); } catch {}
-    // No llamamos reader.reset(); algunas versiones no lo incluyen.
-  }
-
-  async toggleTorch() {
-    // Torch si el navegador/track lo soporta (Android Chrome normalmente sí)
-    const stream = this.video.nativeElement?.srcObject as MediaStream | null;
-    const track = stream?.getVideoTracks()?.[0];
-
-    if (!track) { console.warn('Sin track de video'); return; }
-
-    // Chequeo de capacidades
-    const caps = (track as any).getCapabilities ? (track as any).getCapabilities() : null;
-    if (caps && 'torch' in caps) {
-      const next = !this.torchOn;
-      try {
-        // Cast a any para evitar errores de tipo TS (propiedad no tipada en MediaTrackConstraintSet)
-        await (track as any).applyConstraints({ advanced: [{ torch: next }] } as any);
-        this.torchOn = next;
-      } catch (e) {
-        console.warn('No se pudo activar linterna via constraints:', e);
-      }
+  // Evento de ngx-scanner: lista las cámaras disponibles
+  onCamerasFound(devs: MediaDeviceInfo[]) {
+    this.devices = devs || [];
+    if (this.devices.length) {
+      const back = this.devices.find(d => /back|rear|trás|trasera|environment/i.test(d.label));
+      this.selectedDevice = back ?? this.devices[0];
     } else {
-      console.warn('Torch no soportado por este dispositivo/navegador.');
+      this.selectedDevice = undefined;
     }
+  }
+
+  onHasDevices(has: boolean) {
+    if (!has) console.warn('No se detectaron cámaras en el dispositivo.');
+  }
+
+  // ¡Siempre muestra el bruto! Luego, si quieres, limpias/parseas
+  onScanSuccess(text: string) {
+    const cleaned = text.replace(/^\*+|\*+$/g, '').trim(); // quita * de Code39 impresos
+    this.lastResult = cleaned;
+    // Aquí puedes parsear tu patrón, pero NO bloquees la actualización de UI
+    // const m = cleaned.match(/^J5-STR-(\d{6})-(\d{5})-(\d{5})-(\d{6})$/);
+    // if (m) { ... }
+  }
+
+  onScanError(err: any) {
+    // Errores de decodificación son normales mientras intenta leer
+    // console.warn(err);
+  }
+
+  toggleTorch() {
+    this.torchOn = !this.torchOn;
+  }
+
+  logout() {
+    this.auth.logout();
   }
 }
