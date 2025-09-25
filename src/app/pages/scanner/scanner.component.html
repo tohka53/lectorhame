@@ -1,15 +1,49 @@
-<!-- ... tu scanner a pantalla completa ... -->
+<!-- Scanner con propiedades válidas solamente -->
+<zxing-scanner 
+  #scanner
+  [formats]="formats"
+  [device]="selectedDevice"
+  [torch]="torchOn"
+  [enable]="true"
+  (camerasFound)="onCamerasFound($event)"
+  (hasDevices)="onHasDevices($event)"
+  (scanSuccess)="onScanSuccess($event)"
+  (scanError)="onScanError($event)"
+  (torchCompatible)="onTorchCompatible($event)"
+  (permissionResponse)="onPermissionResponse($event)">
+</zxing-scanner>
 
 <section class="result">
   <h3>Lectura</h3>
   <div *ngIf="lastResult; else noResult">
-    <p><b>Válido:</b> <code>{{ lastResult }}</code></p>
+    <p><b>✅ Código Válido:</b> <code>{{ lastResult }}</code></p>
   </div>
   <ng-template #noResult>
-    <p class="muted">Aún no hay lectura válida (J5-STR-...)</p>
+    <p class="muted">🔍 Buscando códigos válidos (B######-STR-####-#)...</p>
   </ng-template>
-
   <p *ngIf="lastIgnored" class="warn">
-    Descartado: <code>{{ lastIgnored }}</code> (posible EAN/otro código en la hoja)
+    ⚠️ Descartado: <code>{{ lastIgnored }}</code> (formato no válido)
   </p>
 </section>
+
+<!-- Controles -->
+<div class="controls" *ngIf="devices.length > 0">
+  <!-- Botón de flash -->
+  <button (click)="toggleTorch()" class="control-btn" *ngIf="torchAvailable">
+    {{ torchOn ? '🔦' : '💡' }} Flash
+  </button>
+  
+  <!-- Selector de cámara -->
+  <select (change)="onDeviceSelectChange($event)" class="camera-select" *ngIf="devices.length > 1">
+    <option *ngFor="let device of devices; let i = index" 
+            [value]="i" 
+            [selected]="device === selectedDevice">
+      📷 {{ device.label || 'Cámara ' + (i + 1) }}
+    </option>
+  </select>
+  
+  <!-- Botón de logout -->
+  <button (click)="logout()" class="control-btn logout">
+    🚪 Salir
+  </button>
+</div>

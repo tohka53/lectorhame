@@ -4,10 +4,9 @@ import { BarcodeFormat } from '@zxing/library';
 
 @Component({
   selector: 'app-scanner',
-  templateUrl: './scanner.component.html',
-  styleUrls: ['./scanner.component.css'],
   standalone: false,
-  // NO incluir 'standalone: true' aqui
+  templateUrl: './scanner.component.html',
+  styleUrls: ['./scanner.component.css']
 })
 export class ScannerComponent {
   // ✅ ACEPTA SOLO 1D ALFANUMÉRICOS (evita EAN/UPC)
@@ -19,23 +18,14 @@ export class ScannerComponent {
 
   devices: MediaDeviceInfo[] = [];
   selectedDevice?: MediaDeviceInfo;
-  lastResult: string | null = null;      // lo que sí aceptamos
-  lastIgnored: string | null = null;     // lo que descartamos
+  lastResult: string | null = null;      // lo que sí aceptamos (B160495-STR-...)
+  lastIgnored: string | null = null;     // lo que descartamos (p.ej., EAN-13)
   torchOn = false;
-  
-  videoConstraints: MediaTrackConstraints = {
-    facingMode: { ideal: 'environment' },
-    width:  { ideal: 1920 },
-    height: { ideal: 1080 },
-    frameRate: { ideal: 30 }
-  };
+  torchAvailable = false; // ✅ Agregado
 
-  // ✅ PATRÓN CORREGIDO: Acepta códigos como B160495 - STR - 5314 - 1
-  // Formato flexible: [LETRA+NÚMEROS] - STR - [NÚMEROS] - [NÚMEROS]
+  // ✅ PATRÓN CORREGIDO para tu documento: B160495 - STR - 5314 - 1
+  // Acepta espacios opcionales alrededor de los guiones
   private readonly wanted = /^[A-Z]\d{6}\s*-\s*STR\s*-\s*\d{4}\s*-\s*\d+$/;
-  
-  // También acepta el formato alternativo J5-STR-######-#####-#####-######
-  private readonly wantedAlt = /^J5-STR-\d{6}-\d{5}-\d{5}-\d{6}$/;
   
   // Para ignorar EAN/UPC puros (12–14 dígitos)
   private readonly looksLikeEAN = /^\d{12,14}$/;
@@ -43,37 +33,62 @@ export class ScannerComponent {
   constructor(public auth: AuthService) {}
 
   onCamerasFound(devs: MediaDeviceInfo[]) {
+    console.log('📷 Cámaras encontradas:', devs?.length || 0);
     this.devices = devs || [];
-    const back = this.devices.find(d => /back|rear|trás|trasera|environment/i.test(d.label));
+    const back = this.devices.find(d => /back|rear|trás|trasera|environment/i.test(d.label || ''));
     this.selectedDevice = back ?? this.devices[0];
+    if (this.selectedDevice) {
+      console.log('📷 Cámara seleccionada:', this.selectedDevice.label);
+    }
   }
 
   onHasDevices(has: boolean) {
+    console.log('📷 Tiene dispositivos:', has);
     if (!has) console.warn('No se detectaron cámaras.');
+  }
+
+  // ✅ MÉTODOS FALTANTES
+  onTorchCompatible(compatible: boolean) {
+    console.log('🔦 Flash disponible:', compatible);
+    this.torchAvailable = compatible;
+  }
+
+  onPermissionResponse(permission: boolean) {
+    console.log('🔑 Permisos:', permission ? 'Concedidos' : 'Denegados');
+    if (!permission) {
+      alert('Se requieren permisos de cámara para escanear códigos');
+    }
+  }
+
+  onDeviceSelectChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const deviceIndex = parseInt(select.value);
+    this.selectedDevice = this.devices[deviceIndex];
+    console.log('📷 Cambiando a cámara:', this.selectedDevice?.label);
   }
 
   onScanSuccess(text: string) {
     const cleaned = text.replace(/^\*+|\*+$/g, '').trim(); // quita * de Code39
     
-    // ❌ Si es EAN/UPC (solo dígitos), lo ignoramos
+    console.log('Código escaneado:', cleaned); // Para debug
+    
+    // ❌ Si es EAN/UPC (solo dígitos), lo ignoramos y mostramos en "descartados"
     if (this.looksLikeEAN.test(cleaned)) {
       this.lastIgnored = cleaned;
-      console.log('Código EAN/UPC ignorado:', cleaned);
       return;
     }
 
-    // ✅ Acepta si coincide alguno de los patrones válidos
-    if (this.wanted.test(cleaned) || this.wantedAlt.test(cleaned)) {
+    // ✅ Acepta solo si coincide el patrón B160495 - STR - 5314 - 1
+    if (this.wanted.test(cleaned)) {
       this.lastResult = cleaned;
       this.lastIgnored = null;
-      console.log('Código válido encontrado:', cleaned);
-      
+      console.log('✅ Código válido encontrado:', cleaned);
       // (opcional) pausar un momento para que no repita:
       // setTimeout(() => this.lastResult = null, 1500);
     } else {
-      // No es EAN pero tampoco es el formato objetivo
+      // No es EAN pero tampoco es el formato objetivo; lo mostramos como descartado
       this.lastIgnored = cleaned;
-      console.log('Código no reconocido:', cleaned);
+      console.log('⚠️ Código no válido:', cleaned);
     }
   }
 
@@ -87,10 +102,5 @@ export class ScannerComponent {
 
   logout() { 
     this.auth.logout(); 
-  }
-
-  // Método auxiliar para limpiar y normalizar códigos
-  private normalizeCode(code: string): string {
-    return code.replace(/\s+/g, ' ').trim();
   }
 }
