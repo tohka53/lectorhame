@@ -9,11 +9,13 @@ import { BarcodeFormat } from '@zxing/library';
   styleUrls: ['./scanner.component.css']
 })
 export class ScannerComponent {
-  // ✅ ACEPTA SOLO 1D ALFANUMÉRICOS (evita EAN/UPC)
+  // ✅ ACEPTA MÁS FORMATOS DE CÓDIGOS DE BARRAS
   formats = [
-    BarcodeFormat.CODE_128,
-    BarcodeFormat.CODE_39,
+    BarcodeFormat.CODE_128,     // Más común para documentos
+    BarcodeFormat.CODE_39,      // También común
     BarcodeFormat.CODE_93,
+    BarcodeFormat.CODABAR,      // A veces usado en documentos
+    BarcodeFormat.ITF,          // Interleaved 2 of 5
   ];
 
   devices: MediaDeviceInfo[] = [];
@@ -70,25 +72,38 @@ export class ScannerComponent {
   onScanSuccess(text: string) {
     const cleaned = text.replace(/^\*+|\*+$/g, '').trim(); // quita * de Code39
     
-    console.log('Código escaneado:', cleaned); // Para debug
+    console.log('=== CÓDIGO COMPLETO ESCANEADO ===');
+    console.log('Raw:', text);
+    console.log('Cleaned:', cleaned);
+    console.log('Longitud:', cleaned.length);
+    console.log('=================================');
     
-    // ❌ Si es EAN/UPC (solo dígitos), lo ignoramos y mostramos en "descartados"
+    // ❌ Si es EAN/UPC (solo dígitos), lo ignoramos
     if (this.looksLikeEAN.test(cleaned)) {
-      this.lastIgnored = cleaned;
+      this.lastIgnored = `EAN/UPC: ${cleaned}`;
       return;
     }
 
-    // ✅ Acepta solo si coincide el patrón B160495 - STR - 5314 - 1
-    if (this.wanted.test(cleaned)) {
-      this.lastResult = cleaned;
+    // ✅ Buscar el patrón B160495 - STR - 5314 - 1 DENTRO del texto escaneado
+    const match = cleaned.match(/[A-Z]\d{6}\s*-\s*STR\s*-\s*\d{4}\s*-\s*\d+/);
+    if (match) {
+      this.lastResult = match[0]; // Solo la parte que coincide
       this.lastIgnored = null;
-      console.log('✅ Código válido encontrado:', cleaned);
-      // (opcional) pausar un momento para que no repita:
-      // setTimeout(() => this.lastResult = null, 1500);
+      console.log('✅ Código válido encontrado:', match[0]);
+      console.log('✅ Extraído de:', cleaned.substring(0, 100) + '...');
     } else {
-      // No es EAN pero tampoco es el formato objetivo; lo mostramos como descartado
-      this.lastIgnored = cleaned;
-      console.log('⚠️ Código no válido:', cleaned);
+      // Mostrar los primeros 200 caracteres para debug
+      const preview = cleaned.length > 200 ? cleaned.substring(0, 200) + '...' : cleaned;
+      this.lastIgnored = `No matching pattern in: ${preview}`;
+      console.log('⚠️ Patrón no encontrado en:', cleaned);
+      
+      // Intentar encontrar cualquier cosa que contenga "STR"
+      if (cleaned.includes('STR')) {
+        console.log('🔍 Texto contiene "STR", buscando contexto...');
+        const strIndex = cleaned.indexOf('STR');
+        const context = cleaned.substring(Math.max(0, strIndex - 20), strIndex + 30);
+        console.log('🔍 Contexto alrededor de STR:', context);
+      }
     }
   }
 
