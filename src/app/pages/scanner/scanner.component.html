@@ -1,4 +1,4 @@
-<!-- Scanner con propiedades válidas solamente -->
+<!-- Scanner en modo debug -->
 <zxing-scanner 
   #scanner
   [formats]="formats"
@@ -13,27 +13,60 @@
   (permissionResponse)="onPermissionResponse($event)">
 </zxing-scanner>
 
-<section class="result">
-  <h3>Lectura</h3>
-  <div *ngIf="lastResult; else noResult">
-    <p><b>✅ Código Válido:</b> <code>{{ lastResult }}</code></p>
+<!-- Panel de resultados expandido -->
+<section class="result-panel">
+  <div class="result-header">
+    <h3>🔍 Modo Debug - Todos los Códigos</h3>
+    <button (click)="clearHistory()" class="clear-btn">Limpiar</button>
   </div>
-  <ng-template #noResult>
-    <p class="muted">🔍 Buscando códigos válidos (B######-STR-####-#)...</p>
-  </ng-template>
-  <p *ngIf="lastIgnored" class="warn">
-    ⚠️ Descartado: <code>{{ lastIgnored }}</code> (formato no válido)
-  </p>
+
+  <!-- Último código leído -->
+  <div *ngIf="lastResult" class="current-result">
+    <h4>📊 Último Código Leído:</h4>
+    <div class="code-display">
+      <button (click)="copyToClipboard(lastResult)" class="copy-btn">📋</button>
+      <code class="full-text">{{ lastResult }}</code>
+    </div>
+    <p><strong>Longitud:</strong> {{ lastResult.length }} caracteres</p>
+  </div>
+
+  <!-- Historial de códigos -->
+  <div *ngIf="allScannedCodes.length > 0" class="history">
+    <h4>📚 Historial de Códigos:</h4>
+    <div *ngFor="let code of allScannedCodes; let i = index" class="code-item">
+      <div class="code-header">
+        <span class="code-index">#{{ i + 1 }}</span>
+        <span class="code-format">{{ code.format }}</span>
+        <span class="code-time">{{ code.timestamp | date:'HH:mm:ss' }}</span>
+        <button (click)="copyToClipboard(code.text)" class="copy-btn-small">📋</button>
+      </div>
+      <div class="code-preview">
+        <strong>Inicio:</strong> {{ code.text.substring(0, 50) }}{{ code.text.length > 50 ? '...' : '' }}
+      </div>
+      <div class="code-length">
+        <strong>Longitud:</strong> {{ code.text.length }} chars
+      </div>
+      
+      <!-- Mostrar código completo si es corto -->
+      <div *ngIf="code.text.length <= 200" class="code-full">
+        <code>{{ code.text }}</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mensaje de espera -->
+  <div *ngIf="allScannedCodes.length === 0" class="waiting">
+    <p>🎯 Apunta la cámara hacia el código de barras...</p>
+    <p><small>Este modo detecta TODOS los tipos de códigos</small></p>
+  </div>
 </section>
 
 <!-- Controles -->
-<div class="controls" *ngIf="devices.length > 0">
-  <!-- Botón de flash -->
+<div class="controls">
   <button (click)="toggleTorch()" class="control-btn" *ngIf="torchAvailable">
     {{ torchOn ? '🔦' : '💡' }} Flash
   </button>
   
-  <!-- Selector de cámara -->
   <select (change)="onDeviceSelectChange($event)" class="camera-select" *ngIf="devices.length > 1">
     <option *ngFor="let device of devices; let i = index" 
             [value]="i" 
@@ -42,8 +75,194 @@
     </option>
   </select>
   
-  <!-- Botón de logout -->
   <button (click)="logout()" class="control-btn logout">
     🚪 Salir
   </button>
 </div>
+
+<style>
+:host {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+::ng-deep zxing-scanner {
+  display: block;
+  width: 100vw;
+  height: 60vh; /* Más espacio para los resultados */
+}
+
+::ng-deep zxing-scanner video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.result-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40vh;
+  background: rgba(0, 0, 0, 0.95);
+  color: white;
+  padding: 15px;
+  overflow-y: auto;
+  z-index: 1000;
+  border-top: 2px solid #333;
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #444;
+  padding-bottom: 10px;
+}
+
+.clear-btn, .copy-btn, .copy-btn-small {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.copy-btn-small {
+  padding: 2px 6px;
+  margin-left: 10px;
+}
+
+.current-result {
+  margin-bottom: 20px;
+  padding: 10px;
+  background: rgba(0, 150, 0, 0.2);
+  border: 1px solid #00ff00;
+  border-radius: 5px;
+}
+
+.code-display {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.full-text {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 10px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  flex: 1;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.history {
+  margin-top: 20px;
+}
+
+.code-item {
+  margin-bottom: 15px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+  border-left: 3px solid #007bff;
+}
+
+.code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.code-index {
+  background: #007bff;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: bold;
+}
+
+.code-format {
+  background: #6c757d;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.code-time {
+  color: #aaa;
+  font-size: 10px;
+}
+
+.code-preview, .code-length {
+  font-size: 11px;
+  margin-bottom: 5px;
+}
+
+.code-full code {
+  display: block;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  word-break: break-all;
+  margin-top: 8px;
+}
+
+.waiting {
+  text-align: center;
+  padding: 40px 20px;
+  color: #aaa;
+}
+
+.controls {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.control-btn {
+  padding: 10px 15px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  border: 1px solid #666;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  backdrop-filter: blur(5px);
+}
+
+.control-btn:hover {
+  background: rgba(0, 0, 0, 0.95);
+}
+
+.logout {
+  background: rgba(220, 53, 69, 0.8);
+}
+
+.camera-select {
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  border: 1px solid #666;
+  border-radius: 8px;
+  font-size: 12px;
+}
+</style>
