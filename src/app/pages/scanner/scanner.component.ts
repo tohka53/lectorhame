@@ -5,7 +5,9 @@ import { BarcodeFormat } from '@zxing/library';
 @Component({
   selector: 'app-scanner',
   templateUrl: './scanner.component.html',
-  styleUrls: ['./scanner.component.css']
+  styleUrls: ['./scanner.component.css'],
+  standalone: false,
+  // NO incluir 'standalone: true' aqui
 })
 export class ScannerComponent {
   // ✅ ACEPTA SOLO 1D ALFANUMÉRICOS (evita EAN/UPC)
@@ -17,11 +19,10 @@ export class ScannerComponent {
 
   devices: MediaDeviceInfo[] = [];
   selectedDevice?: MediaDeviceInfo;
-
-  lastResult: string | null = null;      // lo que sí aceptamos (J5-STR-...)
-  lastIgnored: string | null = null;     // lo que descartamos (p.ej., EAN-13)
+  lastResult: string | null = null;      // lo que sí aceptamos
+  lastIgnored: string | null = null;     // lo que descartamos
   torchOn = false;
-
+  
   videoConstraints: MediaTrackConstraints = {
     facingMode: { ideal: 'environment' },
     width:  { ideal: 1920 },
@@ -29,9 +30,14 @@ export class ScannerComponent {
     frameRate: { ideal: 30 }
   };
 
-  // ✅ patrón esperado: J5-STR-######-#####-#####-######
-  private readonly wanted = /^J5-STR-\d{6}-\d{5}-\d{5}-\d{6}$/;
-  // para ignorar EAN/UPC puros (12–14 dígitos)
+  // ✅ PATRÓN CORREGIDO: Acepta códigos como B160495 - STR - 5314 - 1
+  // Formato flexible: [LETRA+NÚMEROS] - STR - [NÚMEROS] - [NÚMEROS]
+  private readonly wanted = /^[A-Z]\d{6}\s*-\s*STR\s*-\s*\d{4}\s*-\s*\d+$/;
+  
+  // También acepta el formato alternativo J5-STR-######-#####-#####-######
+  private readonly wantedAlt = /^J5-STR-\d{6}-\d{5}-\d{5}-\d{6}$/;
+  
+  // Para ignorar EAN/UPC puros (12–14 dígitos)
   private readonly looksLikeEAN = /^\d{12,14}$/;
 
   constructor(public auth: AuthService) {}
@@ -48,24 +54,43 @@ export class ScannerComponent {
 
   onScanSuccess(text: string) {
     const cleaned = text.replace(/^\*+|\*+$/g, '').trim(); // quita * de Code39
-    // ❌ Si es EAN/UPC (solo dígitos), lo ignoramos y mostramos en "descartados"
+    
+    // ❌ Si es EAN/UPC (solo dígitos), lo ignoramos
     if (this.looksLikeEAN.test(cleaned)) {
       this.lastIgnored = cleaned;
+      console.log('Código EAN/UPC ignorado:', cleaned);
       return;
     }
-    // ✅ Acepta solo si coincide el patrón J5-STR-...
-    if (this.wanted.test(cleaned)) {
+
+    // ✅ Acepta si coincide alguno de los patrones válidos
+    if (this.wanted.test(cleaned) || this.wantedAlt.test(cleaned)) {
       this.lastResult = cleaned;
       this.lastIgnored = null;
+      console.log('Código válido encontrado:', cleaned);
+      
       // (opcional) pausar un momento para que no repita:
       // setTimeout(() => this.lastResult = null, 1500);
     } else {
-      // No es EAN pero tampoco es el formato objetivo; lo mostramos como descartado
+      // No es EAN pero tampoco es el formato objetivo
       this.lastIgnored = cleaned;
+      console.log('Código no reconocido:', cleaned);
     }
   }
 
-  onScanError(_err: any) { /* normal mientras intenta */ }
-  toggleTorch() { this.torchOn = !this.torchOn; }
-  logout() { this.auth.logout(); }
+  onScanError(_err: any) { 
+    // Normal mientras intenta leer
+  }
+
+  toggleTorch() { 
+    this.torchOn = !this.torchOn; 
+  }
+
+  logout() { 
+    this.auth.logout(); 
+  }
+
+  // Método auxiliar para limpiar y normalizar códigos
+  private normalizeCode(code: string): string {
+    return code.replace(/\s+/g, ' ').trim();
+  }
 }
