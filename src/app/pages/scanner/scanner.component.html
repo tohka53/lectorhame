@@ -1,684 +1,88 @@
-<!-- Scanner optimizado para reconocimiento J5-STR -->
-<zxing-scanner 
+<!-- Scanner en modo debug (robusto) -->
+<zxing-scanner
   #scanner
-  [formats]="formats"
   [device]="selectedDevice"
+  [formats]="formats"
+  [tryHarder]="true"
+  [enable]="true"
   [torch]="torchOn"
-  [enable]="isScanning"
+  [timeBetweenScans]="150"
   (camerasFound)="onCamerasFound($event)"
+  (hasDevices)="onHasDevices($event)"
   (scanSuccess)="onScanSuccess($event)"
   (scanError)="onScanError($event)"
   (torchCompatible)="onTorchCompatible($event)"
   (permissionResponse)="onPermissionResponse($event)">
 </zxing-scanner>
 
-<!-- Indicador de estado -->
-<div class="status-indicator" [class.valid]="validPattern" [class.scanning]="isScanning">
-  <div class="status-icon">
-    {{ validPattern ? '✅' : (isScanning ? '🔍' : '⏸️') }}
-  </div>
-  <div class="status-text">
-    <span *ngIf="validPattern">¡CÓDIGO J5-STR ENCONTRADO!</span>
-    <span *ngIf="!validPattern && isScanning">Buscando código J5-STR...</span>
-    <span *ngIf="!isScanning">Escaneo pausado</span>
-  </div>
-  <div class="scan-counter">Intentos: {{ scanCount }}</div>
-</div>
-
-<!-- Panel de códigos válidos (prioritario) -->
-<section class="valid-codes-panel" *ngIf="validCodes.length > 0">
-  <div class="panel-header valid-header">
-    <h3>✅ CÓDIGOS J5-STR VÁLIDOS</h3>
-    <button (click)="clearValidCodes()" class="clear-btn">Limpiar</button>
-  </div>
-  
-  <div *ngFor="let code of validCodes; let i = index" class="valid-code-item">
-    <div class="code-header">
-      <span class="code-index valid-index">#{{ i + 1 }}</span>
-      <span class="code-format">{{ code.format }}</span>
-      <span class="confidence">{{ code.confidence }}%</span>
-      <span class="code-time">{{ code.timestamp | date:'HH:mm:ss' }}</span>
-      <button (click)="copyToClipboard(code.text)" class="copy-btn-small">📋</button>
-    </div>
-    <div class="code-display">
-      <code class="valid-code-text">{{ code.text }}</code>
-    </div>
-  </div>
-</section>
-
-<!-- Panel de resultados detallado -->
-<section class="result-panel">
-  <div class="result-header">
-    <h3>🔍 Monitor de Escaneo</h3>
-    <div class="header-controls">
-      <button (click)="restartScanning()" class="restart-btn">🔄</button>
-      <button (click)="clearHistory()" class="clear-btn">Limpiar</button>
-    </div>
-  </div>
-
-  <!-- Último código leído -->
-  <div *ngIf="lastResult" class="current-result" [class.valid-pattern]="validPattern">
-    <h4>{{ validPattern ? '✅ CÓDIGO VÁLIDO:' : '📊 Último Código Leído:' }}</h4>
-    <div class="code-display">
-      <button (click)="copyToClipboard(lastResult)" class="copy-btn">📋</button>
-      <code class="full-text" [class.valid]="validPattern">{{ lastResult }}</code>
-    </div>
-    <div class="code-stats">
-      <span><strong>Longitud:</strong> {{ lastResult.length }} chars</span>
-      <span class="pattern-status">
-        {{ validPattern ? '✅ Patrón J5-STR detectado' : '❌ No es patrón J5-STR' }}
-      </span>
-    </div>
-  </div>
-
-  <!-- Código ignorado -->
-  <div *ngIf="lastIgnored && lastIgnored !== lastResult" class="ignored-result">
-    <h4>⚠️ Último Código Ignorado (no es J5-STR):</h4>
-    <div class="code-preview">{{ lastIgnored.substring(0, 100) }}...</div>
-  </div>
-
-  <!-- Ayuda para el usuario -->
-  <div class="help-section">
-    <h4>📋 Buscando patrón:</h4>
-    <code class="pattern-example">J5-STR-######-#####-#####-######</code>
-    <p><small>Donde # representa dígitos</small></p>
-    
-    <div class="tips">
-      <p><strong>💡 Consejos:</strong></p>
-      <ul>
-        <li>• Mantén la cámara estable</li>
-        <li>• Asegúrate de que haya buena iluminación</li>
-        <li>• Acerca o aleja la cámara si no enfoca</li>
-        <li>• El flash se activa automáticamente</li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Historial compacto -->
-  <div *ngIf="allScannedCodes.length > 0" class="history-compact">
-    <h4>📚 Historial Reciente:</h4>
-    <div *ngFor="let code of allScannedCodes.slice(0, 5); let i = index" class="history-item">
-      <span class="item-number">{{ i + 1 }}.</span>
-      <span class="item-time">{{ code.timestamp | date:'HH:mm:ss' }}</span>
-      <span class="item-preview">{{ code.text.substring(0, 30) }}...</span>
-      <button (click)="copyToClipboard(code.text)" class="copy-btn-tiny">📋</button>
-    </div>
-  </div>
-
-  <!-- Mensaje de espera mejorado -->
-  <div *ngIf="allScannedCodes.length === 0" class="waiting">
-    <div class="waiting-icon">🎯</div>
-    <p><strong>Apunta la cámara hacia el código de barras</strong></p>
-    <p>Buscando patrón: <code>J5-STR-######-#####-#####-######</code></p>
-    <div class="loading-dots">
-      <span>•</span><span>•</span><span>•</span>
-    </div>
-  </div>
-</section>
-
-<!-- Controles mejorados -->
+<!-- Controles -->
 <div class="controls">
-  <button (click)="toggleTorch()" class="control-btn torch-btn" [class.active]="torchOn" *ngIf="torchAvailable">
-    <span class="btn-icon">{{ torchOn ? '🔦' : '💡' }}</span>
-    <span class="btn-text">Flash</span>
+  <button (click)="toggleTorch()" class="control-btn" *ngIf="torchAvailable">
+    {{ torchOn ? '🔦' : '💡' }} Flash
   </button>
-  
+
   <select (change)="onDeviceSelectChange($event)" class="camera-select" *ngIf="devices.length > 1">
-    <option value="">Seleccionar cámara...</option>
-    <option *ngFor="let device of devices; let i = index" 
-            [value]="i" 
+    <option *ngFor="let device of devices; let i = index"
+            [value]="i"
             [selected]="device === selectedDevice">
       📷 {{ device.label || 'Cámara ' + (i + 1) }}
     </option>
   </select>
-  
-  <button (click)="restartScanning()" class="control-btn restart-btn">
-    <span class="btn-icon">🔄</span>
-    <span class="btn-text">Reiniciar</span>
-  </button>
-  
-  <button (click)="logout()" class="control-btn logout">
-    <span class="btn-icon">🚪</span>
-    <span class="btn-text">Salir</span>
-  </button>
+
+  <!-- Zoom (si el dispositivo lo soporta) -->
+  <div *ngIf="zoomSupported" class="zoom-wrap">
+    <label>Zoom: {{ zoom.toFixed(1) }}x</label>
+    <input type="range" min="{{zoomMin}}" max="{{zoomMax}}" step="0.1"
+           [(ngModel)]="zoom" (input)="applyZoom()" />
+  </div>
+
+  <button (click)="logout()" class="control-btn logout">🚪 Salir</button>
 </div>
 
-<style>
-:host {
-  display: block;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* Scanner ocupando más espacio */
-::ng-deep zxing-scanner {
-  display: block;
-  width: 100vw;
-  height: 55vh;
-}
-
-::ng-deep zxing-scanner video {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: cover !important;
-}
-
-/* Indicador de estado flotante */
-.status-indicator {
-  position: fixed;
-  top: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1002;
-  background: rgba(0, 0, 0, 0.9);
-  color: white;
-  padding: 10px 20px;
-  border-radius: 25px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.3s ease;
-  min-width: 80px;
-}
-
-.control-btn:hover {
-  background: rgba(0, 0, 0, 0.95);
-  transform: translateY(-1px);
-}
-
-.control-btn.active {
-  background: rgba(255, 193, 7, 0.9);
-  border-color: #ffc107;
-  color: black;
-}
-
-.torch-btn.active {
-  box-shadow: 0 0 15px rgba(255, 193, 7, 0.5);
-}
-
-.restart-btn:hover {
-  background: rgba(23, 162, 184, 0.9);
-}
-
-.logout {
-  background: rgba(220, 53, 69, 0.85);
-  border-color: #dc3545;
-}
-
-.logout:hover {
-  background: rgba(220, 53, 69, 0.95);
-}
-
-.btn-icon {
-  font-size: 14px;
-}
-
-.btn-text {
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.camera-select {
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.85);
-  color: white;
-  border: 1px solid #666;
-  border-radius: 8px;
-  font-size: 11px;
-  backdrop-filter: blur(5px);
-  max-width: 180px;
-}
-
-.camera-select:focus {
-  outline: none;
-  border-color: #007bff;
-}
-
-/* Botones de utilidad */
-.clear-btn, .copy-btn, .copy-btn-small, .copy-btn-tiny {
-  background: #007bff;
-  color: white;
-  border: none;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s ease;
-}
-
-.copy-btn-small {
-  padding: 3px 6px;
-  font-size: 10px;
-}
-
-.copy-btn-tiny {
-  padding: 2px 4px;
-  font-size: 9px;
-}
-
-.clear-btn {
-  background: #6c757d;
-}
-
-.clear-btn:hover {
-  background: #545b62;
-}
-
-.copy-btn:hover, .copy-btn-small:hover, .copy-btn-tiny:hover {
-  background: #0056b3;
-  transform: scale(1.05);
-}
-
-/* Panel headers */
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-  border-bottom: 1px solid #444;
-  padding-bottom: 10px;
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-/* Code items */
-.code-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  font-size: 12px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.code-index {
-  background: #007bff;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: bold;
-  font-size: 10px;
-}
-
-.code-format {
-  background: #6c757d;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-}
-
-.code-time {
-  color: #aaa;
-  font-size: 10px;
-}
-
-/* Responsive design */
-@media (max-width: 768px) {
-  .controls {
-    top: 10px;
-    right: 10px;
-    gap: 6px;
-  }
-  
-  .control-btn {
-    padding: 8px 10px;
-    font-size: 11px;
-    min-width: 70px;
-  }
-  
-  .status-indicator {
-    top: 70px;
-    left: 10px;
-    right: 10px;
-    transform: none;
-    padding: 8px 15px;
-  }
-  
-  .valid-codes-panel {
-    top: 120px;
-    left: 5px;
-    right: 5px;
-  }
-  
-  .result-panel {
-    height: 50vh;
-  }
-  
-  ::ng-deep zxing-scanner {
-    height: 50vh;
-  }
-}
-
-@media (max-width: 480px) {
-  .btn-text {
-    display: none;
-  }
-  
-  .control-btn {
-    min-width: 40px;
-    padding: 8px;
-  }
-  
-  .status-text {
-    font-size: 12px;
-  }
-  
-  .pattern-example {
-    font-size: 12px;
-  }
-}: center;
-  gap: 10px;
-  border: 2px solid #666;
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
-}
-
-.status-indicator.valid {
-  background: rgba(0, 150, 0, 0.9);
-  border-color: #00ff00;
-  box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
-}
-
-.status-indicator.scanning {
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 0.8; }
-  50% { opacity: 1; }
-}
-
-.status-icon {
-  font-size: 18px;
-}
-
-.status-text {
-  font-weight: bold;
-  font-size: 14px;
-}
-
-.scan-counter {
-  font-size: 11px;
-  opacity: 0.8;
-}
-
-/* Panel de códigos válidos (prioritario) */
-.valid-codes-panel {
-  position: fixed;
-  top: 130px;
-  left: 10px;
-  right: 10px;
-  max-height: 200px;
-  background: rgba(0, 150, 0, 0.95);
-  color: white;
-  padding: 15px;
-  border-radius: 10px;
-  z-index: 1001;
-  overflow-y: auto;
-  border: 2px solid #00ff00;
-  box-shadow: 0 5px 25px rgba(0, 255, 0, 0.3);
-}
-
-.valid-header {
-  color: white !important;
-}
-
-.valid-code-item {
-  background: rgba(255, 255, 255, 0.15);
-  padding: 10px;
-  border-radius: 8px;
-  margin-bottom: 10px;
-  border-left: 4px solid #00ff00;
-}
-
-.valid-index {
-  background: #00aa00 !important;
-}
-
-.confidence {
-  background: #007700;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: bold;
-}
-
-.valid-code-text {
-  background: rgba(255, 255, 255, 0.2) !important;
-  color: #00ff00 !important;
-  font-weight: bold;
-}
-
-/* Panel principal de resultados */
-.result-panel {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 45vh;
-  background: rgba(0, 0, 0, 0.95);
-  color: white;
-  padding: 15px;
-  overflow-y: auto;
-  z-index: 1000;
-  border-top: 2px solid #333;
-  backdrop-filter: blur(10px);
-}
-
-.result-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-  border-bottom: 1px solid #444;
-  padding-bottom: 10px;
-}
-
-.header-controls {
-  display: flex;
-  gap: 10px;
-}
-
-.restart-btn {
-  background: #17a2b8;
-  color: white;
-  border: none;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.current-result {
-  margin-bottom: 20px;
-  padding: 15px;
-  background: rgba(100, 100, 100, 0.2);
-  border: 1px solid #666;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.current-result.valid-pattern {
-  background: rgba(0, 150, 0, 0.2);
-  border-color: #00ff00;
-  box-shadow: 0 0 15px rgba(0, 255, 0, 0.2);
-}
-
-.code-display {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 10px 0;
-}
-
-.full-text {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 12px;
-  border-radius: 6px;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  flex: 1;
-  max-height: 120px;
-  overflow-y: auto;
-  transition: all 0.3s ease;
-}
-
-.full-text.valid {
-  background: rgba(0, 255, 0, 0.15);
-  border: 1px solid #00ff00;
-  color: #00ff00;
-  font-weight: bold;
-}
-
-.code-stats {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  margin-top: 8px;
-}
-
-.pattern-status {
-  font-weight: bold;
-}
-
-.ignored-result {
-  margin-bottom: 15px;
-  padding: 10px;
-  background: rgba(255, 165, 0, 0.15);
-  border: 1px solid #ffa500;
-  border-radius: 5px;
-  font-size: 12px;
-}
-
-.help-section {
-  margin: 20px 0;
-  padding: 15px;
-  background: rgba(0, 100, 200, 0.1);
-  border-radius: 8px;
-  border-left: 4px solid #007bff;
-}
-
-.pattern-example {
-  display: block;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
-  margin: 8px 0;
-  color: #00bfff;
-  text-align: center;
-  font-weight: bold;
-}
-
-.tips ul {
-  margin: 8px 0;
-  padding-left: 0;
-  list-style: none;
-}
-
-.tips li {
-  margin: 4px 0;
-  font-size: 12px;
-}
-
-.history-compact {
-  margin-top: 20px;
-}
-
-.history-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 11px;
-}
-
-.item-number {
-  background: #666;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: bold;
-  min-width: 20px;
-  text-align: center;
-}
-
-.item-time {
-  color: #aaa;
-  min-width: 60px;
-}
-
-.item-preview {
-  flex: 1;
-  color: #ccc;
-}
-
-.waiting {
-  text-align: center;
-  padding: 40px 20px;
-  color: #aaa;
-}
-
-.waiting-icon {
-  font-size: 48px;
-  margin-bottom: 15px;
-}
-
-.loading-dots {
-  margin-top: 15px;
-}
-
-.loading-dots span {
-  font-size: 20px;
-  animation: bounce 1.4s ease-in-out infinite both;
-}
-
-.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
-.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes bounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1.0); }
-}
-
-/* Controles mejorados */
-.controls {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1003;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.control-btn {
-  padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.85);
-  color: white;
-  border: 1px solid #666;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  backdrop-filter: blur(5px);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 80px;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-</style>
+<!-- Panel de resultados (tu panel actual, sin cambios sustanciales) -->
+<section class="result-panel">
+  <div class="result-header">
+    <h3>🔍 Modo Debug - Todos los Códigos</h3>
+    <button (click)="clearHistory()" class="clear-btn">Limpiar</button>
+  </div>
+
+  <div *ngIf="lastResult" class="current-result">
+    <h4>📊 Último Código VÁLIDO:</h4>
+    <div class="code-display">
+      <button (click)="copyToClipboard(lastResult)" class="copy-btn">📋</button>
+      <code class="full-text">{{ lastResult }}</code>
+    </div>
+    <p><strong>Longitud:</strong> {{ lastResult.length }} caracteres</p>
+  </div>
+
+  <div *ngIf="lastIgnored" class="current-result" style="background:rgba(150,0,0,.25);border-color:#ff5a5a;">
+    <h4>⚠️ Última Lectura Ignorada:</h4>
+    <code class="full-text">{{ lastIgnored }}</code>
+  </div>
+
+  <div *ngIf="allScannedCodes.length > 0" class="history">
+    <h4>📚 Historial de Códigos (crudos):</h4>
+    <div *ngFor="let code of allScannedCodes; let i = index" class="code-item">
+      <div class="code-header">
+        <span class="code-index">#{{ i + 1 }}</span>
+        <span class="code-format">{{ code.format }}</span>
+        <span class="code-time">{{ code.timestamp | date:'HH:mm:ss' }}</span>
+        <button (click)="copyToClipboard(code.text)" class="copy-btn-small">📋</button>
+      </div>
+      <div class="code-preview">
+        <strong>Inicio:</strong> {{ code.text.substring(0, 50) }}{{ code.text.length > 50 ? '...' : '' }}
+      </div>
+      <div class="code-length">
+        <strong>Longitud:</strong> {{ code.text.length }} chars
+      </div>
+      <div *ngIf="code.text.length <= 200" class="code-full">
+        <code>{{ code.text }}</code>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="allScannedCodes.length === 0" class="waiting">
+    <p>🎯 Apunta la cámara hacia el código de barras...</p>
+    <p><small>Este modo detecta TODOS los códigos compatibles seleccionados</small></p>
+  </div>
+</section>

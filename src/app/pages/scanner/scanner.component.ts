@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, ViewChild, AfterViewInit } from '@angular/core';
 import { AuthService } from '../../core/auth.service';
 import { BarcodeFormat } from '@zxing/library';
+import { ZXingScannerComponent } from '@zxing/ngx-scanner';
 
 @Component({
   selector: 'app-scanner',
@@ -8,311 +9,195 @@ import { BarcodeFormat } from '@zxing/library';
   templateUrl: './scanner.component.html',
   styleUrls: ['./scanner.component.css']
 })
-export class ScannerComponent {
-  // ✅ FORMATOS OPTIMIZADOS para tu patrón específico
-  formats = [
-    BarcodeFormat.CODE_128,     // Más probable para documentos largos
-    BarcodeFormat.CODE_39,      // Común en documentos
-    BarcodeFormat.CODABAR,      
-    BarcodeFormat.ITF,          
-    BarcodeFormat.CODE_93,
-    BarcodeFormat.PDF_417,      // Para códigos 2D largos
-    BarcodeFormat.QR_CODE,
-    BarcodeFormat.DATA_MATRIX,
-  ];
+export class ScannerComponent implements AfterViewInit {
+  @ViewChild('scanner') scannerCmp?: ZXingScannerComponent;
+
+  // ✅ Solo los formatos que soportan letras + guiones
+  formats = [BarcodeFormat.CODE_128, BarcodeFormat.CODE_39];
+
+  // Patrón EXACTO requerido
+  private EXACT_REGEX = /^J5-STR-\d{6}-\d{5}-\d{5}-\d{6}$/;
+
+  // Patrón LAX (por si viene con ruido o caracteres extraños)
+  private LAX_REGEX = /J5\W*-\W*STR\W*-\W*\d{6}\W*-\W*\d{5}\W*-\W*\d{5}\W*-\W*\d{6}/i;
 
   devices: MediaDeviceInfo[] = [];
   selectedDevice?: MediaDeviceInfo;
-  lastResult: string | null = null;
-  lastIgnored: string | null = null;
+
+  lastResult: string | null = null;    // último código válido
+  lastIgnored: string | null = null;   // último descartado
+
   torchOn = false;
   torchAvailable = false;
-  
-  // Variables para mejorar reconocimiento
-  isScanning = true;
-  scanCount = 0;
-  validPattern = false;
-  
-  // Lista de códigos válidos encontrados
-  validCodes: Array<{text: string, format: string, timestamp: Date, confidence: number}> = [];
-  allScannedCodes: Array<{text: string, format: string, timestamp: Date}> = [];
 
-  // Patrón específico que buscas: J5-STR-######-#####-#####-######
-  targetPattern = /J5\s*-?\s*STR\s*-?\s*\d{6}\s*-?\s*\d{5}\s*-?\s*\d{5}\s*-?\s*\d{6}/gi;
+  allScannedCodes: Array<{ text: string; format: string; timestamp: Date }> = [];
+
+  // Anti-duplicado / estabilidad
+  private lastRaw = '';
+  private stableCount = 0;
+  private neededStableReads = 2; // requerir 2 lecturas iguales
+
+  // Cooldown (ms) para evitar múltiples lecturas seguidas
+  private cooldownMs = 900;
+  private lastAcceptTime = 0;
+
+  // Zoom
+  zoomSupported: boolean = false;
+  zoomMin: number = 1;
+  zoomMax: number = 1;
+  zoom: number = 1;
 
   constructor(public auth: AuthService) {}
 
+  ngAfterViewInit(): void {
+    setTimeout(() => this.initTrackCapabilities(), 300);
+  }
+
+  private async initTrackCapabilities() {
+    try {
+      const video = this.getVideoEl();
+      const track = video?.srcObject instanceof MediaStream
+        ? video.srcObject.getVideoTracks()[0]
+        : undefined;
+
+      if (!track) return;
+
+      const caps: any = (track.getCapabilities && track.getCapabilities()) || {};
+      if (caps.zoom) {
+        this.zoomSupported = true;
+        this.zoomMin = caps.zoom.min ?? 1;
+        this.zoomMax = caps.zoom.max ?? 1;
+        this.zoom = Math.min(Math.max(this.zoom, this.zoomMin), this.zoomMax);
+      }
+    } catch {
+      // ignorar si no hay soporte
+    }
+  }
+
+  getVideoEl(): HTMLVideoElement | null {
+    const host = document.querySelector('zxing-scanner');
+    if (!host) return null;
+    return host.querySelector('video') as HTMLVideoElement | null;
+  }
+
+  async applyZoom() {
+    if (!this.zoomSupported) return;
+    const video = this.getVideoEl();
+    const track = video?.srcObject instanceof MediaStream
+      ? video.srcObject.getVideoTracks()[0]
+      : undefined;
+
+    if (!track || !track.applyConstraints) return;
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: this.zoom }] as any });
+    } catch {
+      console.warn("El zoom no pudo aplicarse.");
+    }
+  }
+
   onCamerasFound(devs: MediaDeviceInfo[]) {
-    console.log('📷 Cámaras encontradas:', devs?.length || 0);
     this.devices = devs || [];
-    
-    // Priorizar cámara trasera con mejor resolución
-    const backCameras = this.devices.filter(d => 
+    const back = this.devices.find(d =>
       /back|rear|trás|trasera|environment/i.test(d.label || '')
     );
-    
-    // Si hay varias cámaras traseras, elegir la de mayor resolución
-    this.selectedDevice = backCameras[0] ?? this.devices[0];
-    
-    if (this.selectedDevice) {
-      console.log('📷 Cámara seleccionada:', this.selectedDevice.label);
-    }
+    this.selectedDevice = back ?? this.devices[0];
+    setTimeout(() => this.initTrackCapabilities(), 500);
   }
 
   onHasDevices(has: boolean) {
-    console.log('📷 Tiene dispositivos:', has);
-    if (!has) {
-      console.error('❌ No se detectaron cámaras.');
-      alert('No se detectaron cámaras. Por favor, verifica que tu dispositivo tenga cámara y los permisos estén habilitados.');
-    }
+    if (!has) console.warn('No se detectaron cámaras.');
   }
 
   onTorchCompatible(compatible: boolean) {
-    console.log('🔦 Flash disponible:', compatible);
     this.torchAvailable = compatible;
-    
-    // Auto-activar flash si está disponible para mejor lectura
-    if (compatible && !this.torchOn) {
-      setTimeout(() => {
-        this.torchOn = true;
-        console.log('🔦 Flash activado automáticamente');
-      }, 1000);
-    }
   }
 
   onPermissionResponse(permission: boolean) {
-    console.log('🔑 Permisos:', permission ? 'Concedidos' : 'Denegados');
-    if (!permission) {
-      alert('⚠️ Se requieren permisos de cámara para escanear códigos. Por favor, permite el acceso a la cámara y recarga la página.');
-    }
+    if (!permission) alert('Se requieren permisos de cámara para escanear códigos');
   }
 
   onDeviceSelectChange(event: Event) {
     const select = event.target as HTMLSelectElement;
-    const deviceIndex = parseInt(select.value);
+    const deviceIndex = parseInt(select.value, 10);
     this.selectedDevice = this.devices[deviceIndex];
-    console.log('📷 Cambiando a cámara:', this.selectedDevice?.label);
-    
-    // Reset scanning state
-    this.resetScanningState();
+    setTimeout(() => this.initTrackCapabilities(), 500);
   }
+
+  private sanitize(raw: string): string {
+    let t = raw ?? '';
+    t = t.replace(/^\*+|\*+$/g, '');
+    t = t.replace(/[\u2010-\u2015]/g, '-'); // guiones raros → '-'
+    t = t.replace(/\s+/g, ' ').trim();
+    return t;
+  }
+
+  private extractTarget(text: string): string | null {
+    if (this.EXACT_REGEX.test(text)) return text;
+    const m = text.match(this.LAX_REGEX);
+    if (m && m[0]) {
+      const norm = m[0]
+        .toUpperCase()
+        .replace(/J5\W*-\W*STR\W*-/i, 'J5-STR-')
+        .replace(/\W+/g, '-') 
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+      return this.EXACT_REGEX.test(norm) ? norm : null;
+    }
+    return null;
+  }
+
+  private now() { return Date.now(); }
 
   onScanSuccess(result: any) {
-    if (!this.isScanning) return;
+    const textRaw = typeof result === 'string'
+      ? result
+      : (result?.text || result?.getText?.() || '');
 
-    this.scanCount++;
-    
-    const text = typeof result === 'string' ? result : result.text || result.getText();
-    const format = typeof result === 'object' ? result.format || 'Unknown' : 'Unknown';
-    
-    // Limpiar texto
-    const cleaned = text.replace(/^\*+|\*+$/g, '').trim();
-    
-    console.log(`🔍 [${this.scanCount}] CÓDIGO DETECTADO`);
-    console.log('🔍 Formato:', format);
-    console.log('🔍 Texto:', cleaned);
-    console.log('🔍 Longitud:', cleaned.length);
-    
-    // Guardar en historial completo
-    this.allScannedCodes.unshift({
-      text: cleaned,
-      format: format,
-      timestamp: new Date()
-    });
-    
-    if (this.allScannedCodes.length > 15) {
-      this.allScannedCodes = this.allScannedCodes.slice(0, 15);
-    }
-    
-    // Analizar si coincide con el patrón objetivo
-    const analysisResult = this.analyzeTargetPattern(cleaned);
-    
-    if (analysisResult.isValid) {
-      console.log('✅ ¡CÓDIGO VÁLIDO ENCONTRADO!');
-      this.validCodes.unshift({
-        text: cleaned,
-        format: format,
-        timestamp: new Date(),
-        confidence: analysisResult.confidence
-      });
-      
-      this.validPattern = true;
-      this.lastResult = cleaned;
-      this.lastIgnored = null;
-      
-      // Opcional: pausar escaneo por 2 segundos cuando encuentres un código válido
-      this.pauseScanning(2000);
-      
-      // Vibrar si está disponible
-      if (navigator.vibrate) {
-        navigator.vibrate([100, 50, 100]);
-      }
-      
-      // Notification sound (si está disponible)
-      this.playSuccessSound();
-      
+    const format = typeof result === 'object' ? (result?.format || 'Unknown') : 'Unknown';
+    const cleaned = this.sanitize(textRaw);
+
+    this.allScannedCodes.unshift({ text: cleaned, format, timestamp: new Date() });
+    if (this.allScannedCodes.length > 20) this.allScannedCodes.length = 20;
+
+    if (cleaned === this.lastRaw) {
+      this.stableCount++;
     } else {
-      console.log('⚠️ Código no coincide con patrón objetivo');
+      this.lastRaw = cleaned;
+      this.stableCount = 1;
+    }
+
+    if (this.stableCount < this.neededStableReads) {
       this.lastIgnored = cleaned;
-      this.validPattern = false;
+      return;
     }
-    
-    // Siempre mostrar el último código leído
-    this.lastResult = cleaned;
-  }
 
-  analyzeTargetPattern(text: string): {isValid: boolean, confidence: number, matchedPattern?: string} {
-    console.log('🎯 ANALIZANDO PATRÓN OBJETIVO...');
-    
-    // Buscar patrón exacto: J5-STR-######-#####-#####-######
-    const exactMatch = text.match(this.targetPattern);
-    if (exactMatch) {
-      console.log('✅ PATRÓN EXACTO ENCONTRADO:', exactMatch[0]);
-      return {
-        isValid: true,
-        confidence: 100,
-        matchedPattern: exactMatch[0]
-      };
+    if (this.now() - this.lastAcceptTime < this.cooldownMs) {
+      this.lastIgnored = cleaned;
+      return;
     }
-    
-    // Buscar variaciones más flexibles
-    const flexiblePattern = /J5[\s\-]*STR[\s\-]*\d+[\s\-]*\d+[\s\-]*\d+[\s\-]*\d+/gi;
-    const flexibleMatch = text.match(flexiblePattern);
-    if (flexibleMatch) {
-      console.log('✅ PATRÓN FLEXIBLE ENCONTRADO:', flexibleMatch[0]);
-      return {
-        isValid: true,
-        confidence: 80,
-        matchedPattern: flexibleMatch[0]
-      };
-    }
-    
-    // Buscar componentes individuales
-    let confidence = 0;
-    let foundComponents = [];
-    
-    if (text.includes('J5')) {
-      confidence += 25;
-      foundComponents.push('J5');
-    }
-    
-    if (text.toUpperCase().includes('STR')) {
-      confidence += 25;
-      foundComponents.push('STR');
-    }
-    
-    // Buscar secuencias numéricas largas
-    const numberSequences = text.match(/\d{4,}/g);
-    if (numberSequences && numberSequences.length >= 2) {
-      confidence += 20;
-      foundComponents.push(`${numberSequences.length} secuencias numéricas`);
-    }
-    
-    if (foundComponents.length > 0) {
-      console.log('🔍 Componentes encontrados:', foundComponents.join(', '));
-      console.log('🔍 Confianza:', confidence + '%');
-    }
-    
-    return {
-      isValid: confidence >= 50,
-      confidence: confidence
-    };
-  }
 
-  pauseScanning(ms: number) {
-    this.isScanning = false;
-    setTimeout(() => {
-      this.isScanning = true;
-      console.log('🔄 Escaneo reanudado');
-    }, ms);
-  }
-
-  resetScanningState() {
-    this.scanCount = 0;
-    this.validPattern = false;
-    this.isScanning = true;
-  }
-
-  playSuccessSound() {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      oscillator.frequency.value = 800;
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-      
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.3);
-    } catch (error) {
-      console.log('No se pudo reproducir sonido:', error);
+    const candidate = this.extractTarget(cleaned.toUpperCase());
+    if (candidate && this.EXACT_REGEX.test(candidate)) {
+      this.lastResult = candidate;
+      this.lastIgnored = null;
+      this.lastAcceptTime = this.now();
+      console.log('[OK] Código válido:', candidate);
+    } else {
+      this.lastIgnored = cleaned;
     }
   }
 
-  onScanError(err: any) {
-    // Errores normales durante el escaneo, no mostrar en consola
-    if (err && err.message && !err.message.includes('No MultiFormat Readers')) {
-      console.warn('⚠️ Error de escaneo:', err);
-    }
+  onScanError(_err: any) {
+    // ruido normal
   }
 
-  toggleTorch() { 
-    this.torchOn = !this.torchOn;
-    console.log('🔦 Flash:', this.torchOn ? 'Encendido' : 'Apagado');
-  }
+  toggleTorch() { this.torchOn = !this.torchOn; }
 
-  // Reiniciar escaneo si no detecta nada por un tiempo
-  restartScanning() {
-    this.resetScanningState();
-    this.lastResult = null;
-    this.lastIgnored = null;
-    console.log('🔄 Escaneo reiniciado manualmente');
-  }
+  logout() { this.auth.logout(); }
 
-  logout() { 
-    this.auth.logout(); 
-  }
-
-  clearHistory() {
-    this.allScannedCodes = [];
-    this.validCodes = [];
-    this.resetScanningState();
-  }
-
-  clearValidCodes() {
-    this.validCodes = [];
-    this.validPattern = false;
-  }
+  clearHistory() { this.allScannedCodes = []; }
 
   copyToClipboard(text: string) {
-    navigator.clipboard.writeText(text).then(() => {
-      alert('📋 Copiado al portapapeles');
-    }).catch(err => {
-      console.error('Error al copiar:', err);
-      // Fallback para dispositivos más antiguos
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        alert('📋 Copiado al portapapeles');
-      } catch (err) {
-        alert('❌ No se pudo copiar al portapapeles');
-      }
-      document.body.removeChild(textArea);
-    });
-  }
-
-  // Función para probar el patrón manualmente
-  testPattern(testText: string) {
-    const result = this.analyzeTargetPattern(testText);
-    console.log('🧪 Test del patrón:', testText);
-    console.log('🧪 Resultado:', result);
-    return result;
+    navigator.clipboard.writeText(text).then(() => alert('Copiado al portapapeles'));
   }
 }

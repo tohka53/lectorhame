@@ -219,7 +219,7 @@
   .pattern-example {
     font-size: 12px;
   }
-}: center;
+center;
   gap: 10px;
   border: 2px solid #666;
   backdrop-filter: blur(10px);
@@ -550,7 +550,7 @@
   background: rgba(220, 53, 69, 0.85);
   border-color: #dc3545;
 }
-}
+
 .logout:hover {
   background: rgba(220, 53, 69, 0.95);
 }       
