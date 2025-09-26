@@ -12,32 +12,50 @@ import { ZXingScannerComponent } from '@zxing/ngx-scanner';
 export class ScannerComponent implements AfterViewInit {
   @ViewChild('scanner') scannerCmp?: ZXingScannerComponent;
 
-  // ✅ Solo los formatos que soportan letras + guiones
-  formats = [BarcodeFormat.CODE_128, BarcodeFormat.CODE_39];
+  // ✅ TODOS los formatos soportados por @zxing/library
+  // (Si prefieres "todos" sin listar, podrías omitir [formats] en el template,
+  // pero explícito es mejor para controlar compatibilidad.)
+  formats: BarcodeFormat[] = [
+    BarcodeFormat.AZTEC,
+    BarcodeFormat.CODABAR,
+    BarcodeFormat.CODE_39,
+    BarcodeFormat.CODE_93,
+    BarcodeFormat.CODE_128,
+    BarcodeFormat.DATA_MATRIX,
+    BarcodeFormat.EAN_8,
+    BarcodeFormat.EAN_13,
+    BarcodeFormat.ITF,
+    BarcodeFormat.MAXICODE,
+    BarcodeFormat.PDF_417,
+    BarcodeFormat.QR_CODE,
+    BarcodeFormat.RSS_14,
+    BarcodeFormat.RSS_EXPANDED,
+    BarcodeFormat.UPC_A,
+    BarcodeFormat.UPC_E,
+    BarcodeFormat.UPC_EAN_EXTENSION
+  ];
 
   // Patrón EXACTO requerido
   private EXACT_REGEX = /^J5-STR-\d{6}-\d{5}-\d{5}-\d{6}$/;
 
-  // Patrón LAX (por si viene con ruido o caracteres extraños)
+  // Patrón LAX para extraer aunque venga con ruido o separadores raros
   private LAX_REGEX = /J5\W*-\W*STR\W*-\W*\d{6}\W*-\W*\d{5}\W*-\W*\d{5}\W*-\W*\d{6}/i;
 
   devices: MediaDeviceInfo[] = [];
   selectedDevice?: MediaDeviceInfo;
 
-  lastResult: string | null = null;    // último código válido
-  lastIgnored: string | null = null;   // último descartado
+  lastResult: string | null = null;    // último código válido (formato objetivo)
+  lastIgnored: string | null = null;   // última lectura descartada
 
   torchOn = false;
   torchAvailable = false;
 
   allScannedCodes: Array<{ text: string; format: string; timestamp: Date }> = [];
 
-  // Anti-duplicado / estabilidad
+  // Estabilidad y cooldown
   private lastRaw = '';
   private stableCount = 0;
-  private neededStableReads = 2; // requerir 2 lecturas iguales
-
-  // Cooldown (ms) para evitar múltiples lecturas seguidas
+  private neededStableReads = 2; // 2 o 3 según ruido
   private cooldownMs = 900;
   private lastAcceptTime = 0;
 
@@ -50,6 +68,8 @@ export class ScannerComponent implements AfterViewInit {
   constructor(public auth: AuthService) {}
 
   ngAfterViewInit(): void {
+    // Activar tryHarder para mejorar lectura en condiciones difíciles
+    // (se setea en template con [tryHarder]="true")
     setTimeout(() => this.initTrackCapabilities(), 300);
   }
 
@@ -70,7 +90,7 @@ export class ScannerComponent implements AfterViewInit {
         this.zoom = Math.min(Math.max(this.zoom, this.zoomMin), this.zoomMax);
       }
     } catch {
-      // ignorar si no hay soporte
+      // ignore
     }
   }
 
@@ -91,15 +111,13 @@ export class ScannerComponent implements AfterViewInit {
     try {
       await track.applyConstraints({ advanced: [{ zoom: this.zoom }] as any });
     } catch {
-      console.warn("El zoom no pudo aplicarse.");
+      console.warn('No se pudo aplicar zoom en este dispositivo.');
     }
   }
 
   onCamerasFound(devs: MediaDeviceInfo[]) {
     this.devices = devs || [];
-    const back = this.devices.find(d =>
-      /back|rear|trás|trasera|environment/i.test(d.label || '')
-    );
+    const back = this.devices.find(d => /back|rear|trás|trasera|environment/i.test(d.label || ''));
     this.selectedDevice = back ?? this.devices[0];
     setTimeout(() => this.initTrackCapabilities(), 500);
   }
@@ -123,14 +141,16 @@ export class ScannerComponent implements AfterViewInit {
     setTimeout(() => this.initTrackCapabilities(), 500);
   }
 
+  // Normaliza texto crudo
   private sanitize(raw: string): string {
     let t = raw ?? '';
-    t = t.replace(/^\*+|\*+$/g, '');
-    t = t.replace(/[\u2010-\u2015]/g, '-'); // guiones raros → '-'
-    t = t.replace(/\s+/g, ' ').trim();
+    t = t.replace(/^\*+|\*+$/g, '');           // quita asteriscos de algunos lectores
+    t = t.replace(/[\u2010-\u2015]/g, '-');    // guiones tipográficos → '-'
+    t = t.replace(/\s+/g, ' ').trim();         // espacios múltiples
     return t;
   }
 
+  // Extrae el patrón objetivo aunque venga con ruido/separadores
   private extractTarget(text: string): string | null {
     if (this.EXACT_REGEX.test(text)) return text;
     const m = text.match(this.LAX_REGEX);
@@ -138,7 +158,7 @@ export class ScannerComponent implements AfterViewInit {
       const norm = m[0]
         .toUpperCase()
         .replace(/J5\W*-\W*STR\W*-/i, 'J5-STR-')
-        .replace(/\W+/g, '-') 
+        .replace(/\W+/g, '-')     // todo separador raro → '-'
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
       return this.EXACT_REGEX.test(norm) ? norm : null;
@@ -156,39 +176,43 @@ export class ScannerComponent implements AfterViewInit {
     const format = typeof result === 'object' ? (result?.format || 'Unknown') : 'Unknown';
     const cleaned = this.sanitize(textRaw);
 
+    // Historial de lecturas crudas (debug)
     this.allScannedCodes.unshift({ text: cleaned, format, timestamp: new Date() });
     if (this.allScannedCodes.length > 20) this.allScannedCodes.length = 20;
 
-    if (cleaned === this.lastRaw) {
-      this.stableCount++;
-    } else {
-      this.lastRaw = cleaned;
-      this.stableCount = 1;
-    }
+    // Estabilidad (mismas lecturas seguidas)
+    if (cleaned === this.lastRaw) this.stableCount++;
+    else { this.lastRaw = cleaned; this.stableCount = 1; }
 
     if (this.stableCount < this.neededStableReads) {
       this.lastIgnored = cleaned;
       return;
     }
 
+    // Cooldown
     if (this.now() - this.lastAcceptTime < this.cooldownMs) {
       this.lastIgnored = cleaned;
       return;
     }
 
+    // Extraemos TU código, venga del formato que venga
     const candidate = this.extractTarget(cleaned.toUpperCase());
     if (candidate && this.EXACT_REGEX.test(candidate)) {
-      this.lastResult = candidate;
+      this.lastResult = candidate;       // <- este es el valor final que necesitas
       this.lastIgnored = null;
       this.lastAcceptTime = this.now();
-      console.log('[OK] Código válido:', candidate);
+
+      // Aquí dispara tu flujo (buscar/guardar/navegar):
+      // this.onValidCode(candidate);
+
+      console.log('[OK] Código válido:', candidate, 'Formato:', format);
     } else {
       this.lastIgnored = cleaned;
     }
   }
 
   onScanError(_err: any) {
-    // ruido normal
+    // Errores intermitentes durante el escaneo son normales
   }
 
   toggleTorch() { this.torchOn = !this.torchOn; }
